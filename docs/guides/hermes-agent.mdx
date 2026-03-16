@@ -1,0 +1,306 @@
+---
+title: "Hermes Agent + Honcho"
+sidebarTitle: "Hermes Agent"
+description: "How Hermes Agent uses Honcho for long-term memory in CLI and gateway deployments"
+icon: "message-bot"
+---
+
+This guide explains how Honcho fits into [Hermes Agent](https://github.com/NousResearch/hermes-agent), what changes between CLI and gateway deployments, and how to verify that the integration is actually working.
+
+## What Honcho does inside Hermes
+
+Hermes uses Honcho as its long-term memory and user-model layer.
+
+At a high level, Honcho gives Hermes three things:
+
+1. Prompt-time context injection
+   Hermes can load durable context about a user or ongoing working relationship and include that in the prompt before generating a response.
+
+2. Cross-session continuity
+   Hermes can answer questions like "what were we working on?" or remember stable user preferences across conversations.
+
+3. Durable writeback
+   When Hermes learns a stable fact about a user, workflow, or environment, it can store that back into Honcho for future turns.
+
+This sits alongside Hermes' normal short-term conversation history. The short-term session store remembers what happened in the current conversation. Honcho remembers the durable parts that should still matter later.
+
+## Two memory layers in Hermes
+
+When Honcho is enabled, Hermes typically operates with two different kinds of memory at once:
+
+### 1. Local session history
+
+This is the immediate transcript history for the current chat, thread, or CLI session.
+
+Use it for:
+- recent turns in the active conversation
+- short-lived task context
+- immediate follow-up questions
+
+### 2. Honcho memory
+
+This is the semantic, cross-session memory layer.
+
+Use it for:
+- user preferences
+- durable facts about projects and environments
+- continuity across sessions
+- synthesized user context and peer memory
+
+A useful mental model is:
+
+- session history answers: "what was just said here?"
+- Honcho answers: "what should still be true later?"
+
+## CLI mode vs gateway mode
+
+The Honcho integration works in both deployment styles, but the session anchor is different.
+
+### CLI mode
+
+In CLI mode, Hermes often has a natural workspace context. Many users map Honcho sessions per repository or per working directory.
+
+That makes it easy to maintain memory boundaries like:
+- one Honcho session per repo
+- one session for a personal workspace
+- another session for a separate agent or product
+
+This is usually the cleanest setup for development work.
+
+### Gateway mode
+
+In gateway-only mode, Hermes is running as a messaging bot or platform gateway without the CLI loop as the primary interface.
+
+In that setup, Honcho still works fully, but the anchor is usually one of:
+- platform user identity
+- conversation or thread identity
+- chat or room identity
+- an explicitly configured session name
+
+Because there is no natural current working directory per user conversation, session mapping becomes much more important.
+
+That mapping determines whether Honcho memory feels:
+- global to a person across all chats
+- segmented by thread or room
+- separated by deployment or bot role
+
+## How Honcho is used in gateway-only deployments
+
+In a gateway-only deployment, the rough flow looks like this:
+
+1. A platform adapter receives a message
+   For example: Telegram, Discord, Signal, Slack, or another supported messaging surface.
+
+2. The gateway resolves conversation identity
+   Hermes determines which local session and which Honcho session or peer mapping should be used.
+
+3. Hermes initializes or resumes the agent session
+   The local transcript state is loaded.
+
+4. Honcho context is attached
+   Durable user memory and peer context are loaded and made available at prompt time.
+
+5. Hermes responds
+   The response uses both current transcript state and Honcho memory.
+
+6. New durable facts can be written back
+   If Hermes learns something stable and worth keeping, that can be stored back into Honcho.
+
+This means gateway persistence and Honcho are not interchangeable.
+
+Without Honcho:
+- Hermes still has per-chat history
+- continuity is mostly limited to the transcript/session store
+
+With Honcho:
+- Hermes can accumulate a user model over time
+- multiple conversations can share durable continuity
+- preference recall and project continuity improve substantially
+
+## Verifying that Hermes + Honcho is working
+
+The most important thing after setup is not just whether Honcho is configured, but whether the full end-to-end path is working.
+
+That means verifying:
+- configuration
+- prompt-time context injection
+- writeback of new durable facts
+- session mapping behavior
+
+### 1. Check configuration
+
+Start with:
+
+```bash
+hermes honcho status
+```
+
+This should tell you whether Honcho is enabled and whether Hermes can see the expected Honcho configuration.
+
+Depending on your setup, you may also want to inspect:
+
+```bash
+hermes honcho sessions
+hermes honcho peer --show
+```
+
+These commands are useful for confirming the active mapping and peer configuration.
+
+### 2. Test prompt-time recall
+
+The easiest end-to-end validation is a fresh-session recall test.
+
+A good test looks like this:
+
+1. Tell Hermes a distinctive durable fact.
+2. Start a fresh conversation path.
+3. Ask Hermes to recall that fact.
+
+Example:
+
+In one conversation:
+
+```text
+Remember that my test phrase is velvet circuit.
+```
+
+Then in a separate conversation, new thread, or other fresh path:
+
+```text
+What is my test phrase?
+```
+
+If Hermes recalls "velvet circuit" after normal short-term context is gone, Honcho is likely working.
+
+### 3. Test writeback behavior
+
+You also want to know that new information is being stored, not just read.
+
+A good preference-style test is:
+
+1. Tell Hermes:
+
+```text
+Remember that I prefer terse answers.
+```
+
+2. Wait a moment if writes are asynchronous.
+3. Open a fresh conversation.
+4. Ask:
+
+```text
+How should you respond to me?
+```
+
+If Hermes consistently answers with the stored preference, writeback is likely functioning.
+
+## Recommended smoke test for gateway users
+
+For gateway-only users, this quick test is usually enough to validate the integration:
+
+1. Run:
+
+```bash
+hermes honcho status
+```
+
+2. Send a gateway message:
+
+```text
+Remember that my test phrase is velvet circuit.
+```
+
+3. Open a separate chat, thread, or fresh conversation path.
+4. Ask:
+
+```text
+What is my test phrase?
+```
+
+If Hermes recalls the phrase, the following are probably all working:
+- Honcho is configured
+- the gateway is attaching the expected session mapping
+- prompt-time context injection works
+- durable writeback works
+
+## Common false negatives
+
+There are a few cases where users think the integration is broken when the test itself is ambiguous.
+
+### The fact is still in the local transcript
+
+If you ask in the same conversation window, Hermes may be answering from short-term chat history rather than Honcho.
+
+Use a fresh conversation path whenever possible.
+
+### The second chat is mapped to a different Honcho session
+
+In gateway mode this is the most common issue.
+
+If one thread maps to one Honcho session and another thread maps somewhere else, the second conversation may not be reading from the same memory scope.
+
+### Writes are asynchronous
+
+Some setups do not make new memory available instantly. If recall fails immediately, wait briefly and try again.
+
+### The fact was too vague or not durable enough
+
+A distinctive test phrase or a clear preference works better than an ambiguous statement like "remember hi".
+
+## Suggested operational signals
+
+Behavioral testing is the most important validation, but logs and status surfaces help a lot.
+
+If you are operating Hermes in gateway mode, useful observability includes signals like:
+- Honcho attached: yes or no
+- Honcho session name or mapping key
+- peer resolution result
+- memory write queued or completed
+
+Even simple logging such as these can make debugging much easier:
+- loaded Honcho context for session X
+- stored Honcho conclusion for peer Y
+
+## Session strategy recommendations
+
+The right session strategy depends on the product surface.
+
+### Use one session per person when
+- you want continuity across all chats
+- the assistant behaves like one persistent relationship
+- preferences should carry everywhere
+
+### Use one session per thread or room when
+- each thread is a separate project or role
+- multiple contexts should remain isolated
+- shared spaces should not automatically blend memory
+
+### Use one session per repository or workspace when
+- Hermes is primarily being used as a coding agent
+- project memory should stay tightly scoped
+- different repos should not pollute one another
+
+## When Honcho is disabled
+
+Hermes can still run without Honcho.
+
+In that case, it falls back to local conversation persistence only:
+- current transcript history still works
+- per-chat continuity still works
+- cross-session semantic memory is reduced or absent
+
+This is useful to keep in mind during debugging. If a deployment still feels conversationally coherent in a single thread, that does not necessarily mean Honcho is active.
+
+## Related commands
+
+These Hermes commands are the fastest way to inspect Honcho integration from the Hermes side:
+
+```bash
+hermes honcho status
+hermes honcho mode [hybrid|honcho]
+hermes honcho tokens [--context N] [--dialectic N]
+hermes honcho peer --show
+hermes honcho sessions
+```
+
+Use those together with the fresh-session recall test to verify that the integration is behaving the way you expect in production.

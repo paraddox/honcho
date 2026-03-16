@@ -65,7 +65,7 @@
     },
     {
       "group": "Application Interfaces",
-      "pages": ["guides/discord", "guides/honcho-mcp"]
+      "pages": ["guides/discord", "guides/honcho-mcp", "guides/hermes-agent"]
     },
     {
       "group": "Personal Memory",
