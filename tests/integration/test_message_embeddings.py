@@ -12,10 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src import models
+from src.config import settings
 from src.crud import create_messages
 from src.models import Peer, Workspace
 from src.schemas import MessageCreate
 from src.utils.search import search
+
+EMBEDDING_DIMENSIONS = settings.VECTOR_STORE.DIMENSIONS
 
 
 @pytest.mark.asyncio
@@ -286,7 +289,11 @@ async def test_message_chunking_creates_multiple_embeddings(
         id_resource_dict: dict[str, tuple[str, list[int]]],
     ) -> dict[str, list[list[float]]]:
         return {
-            text_id: [[0.1] * 1536, [0.2] * 1536, [0.3] * 1536]  # 3 chunks per message
+            text_id: [
+                [0.1] * EMBEDDING_DIMENSIONS,
+                [0.2] * EMBEDDING_DIMENSIONS,
+                [0.3] * EMBEDDING_DIMENSIONS,
+            ]
             for text_id in id_resource_dict
         }
 

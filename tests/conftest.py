@@ -412,9 +412,9 @@ def _content_to_embedding(content: str) -> list[float]:
 
     # Hash the content to get a deterministic seed
     content_hash = hashlib.sha256(content.encode()).digest()
-    # Use hash bytes to generate 1536 floats between -1 and 1
+    # Use hash bytes to generate config-sized floats between -1 and 1
     embedding: list[float] = []
-    for i in range(1536):
+    for i in range(settings.VECTOR_STORE.DIMENSIONS):
         # Use different bytes from hash (cycling through)
         byte_val = content_hash[i % len(content_hash)]
         # Normalize to [-1, 1] range

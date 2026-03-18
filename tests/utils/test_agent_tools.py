@@ -103,7 +103,7 @@ async def tool_test_data(
             observer=peer1.name,
             observed=peer2.name,
             content=content,
-            embedding=[0.1 * (i + 1)] * 1536,
+            embedding=[0.1 * (i + 1)] * settings.VECTOR_STORE.DIMENSIONS,
             session_name=session.name,
             level="explicit",
             metadata={

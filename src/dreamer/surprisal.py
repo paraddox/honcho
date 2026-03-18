@@ -334,7 +334,7 @@ def _extract_embeddings(observations: list[models.Document]) -> np.ndarray:
         observations: List of Document objects with embeddings
 
     Returns:
-        np.ndarray of shape (N, 1536) containing embeddings
+        np.ndarray of shape (N, embedding_dim) containing embeddings
     """
     if not observations:
         return np.array([])

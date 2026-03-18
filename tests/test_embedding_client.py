@@ -130,7 +130,9 @@ async def test_openai_compatible_providers_use_configured_vector_dimensions(
 
     async def fake_create(**kwargs: object) -> SimpleNamespace:
         calls.append(kwargs)
-        dimensions = kwargs.get("dimensions", 1536)
+        dimensions = kwargs.get(
+            "dimensions", embedding_client_module.settings.VECTOR_STORE.DIMENSIONS
+        )
         inputs = kwargs["input"]
         item_count = len(inputs) if isinstance(inputs, list) else 1
         return SimpleNamespace(

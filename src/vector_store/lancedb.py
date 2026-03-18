@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 _VALID_IDENTIFIER_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 # Schema for LanceDB tables
-# id: string, vector: fixed_size_list of float32 (1536 dimensions for OpenAI embeddings)
+# id: string, vector: fixed_size_list of float32 using the configured embedding size
 # Additional metadata columns are added dynamically
 
 # pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownParameterType=false
