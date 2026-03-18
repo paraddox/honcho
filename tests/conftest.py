@@ -721,7 +721,7 @@ def mock_honcho_llm_call(request: pytest.FixtureRequest):
 
 
 @pytest.fixture(autouse=True)
-def mock_tracked_db(db_engine: AsyncEngine, request: pytest.FixtureRequest):
+def mock_tracked_db(request: pytest.FixtureRequest):
     """Mock tracked_db to create fresh sessions per call.
 
     Using a session factory instead of a shared session avoids asyncio lock
@@ -733,6 +733,7 @@ def mock_tracked_db(db_engine: AsyncEngine, request: pytest.FixtureRequest):
 
     from contextlib import asynccontextmanager
 
+    db_engine = request.getfixturevalue("db_engine")
     session_factory = async_sessionmaker(bind=db_engine, expire_on_commit=False)
 
     @asynccontextmanager

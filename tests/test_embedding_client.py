@@ -161,3 +161,47 @@ async def test_openai_compatible_providers_use_configured_vector_dimensions(
     assert [len(item) for item in batch] == [256, 256]
     assert [len(item) for item in chunked["msg-1"]] == [256]
     assert [call["dimensions"] for call in calls] == [256, 256, 256]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method_name", "method_args"),
+    [
+        ("embed", ("hello",)),
+        ("simple_batch_embed", (["alpha", "beta"],)),
+        ("batch_embed", ({"msg-1": ("gamma", [1, 2, 3])},)),
+    ],
+)
+async def test_openai_compatible_providers_raise_on_dimension_mismatch(
+    monkeypatch: pytest.MonkeyPatch,
+    method_name: str,
+    method_args: tuple[object, ...],
+) -> None:
+    monkeypatch.setattr(
+        embedding_client_module.settings.VECTOR_STORE, "DIMENSIONS", 256
+    )
+
+    async def fake_create(**kwargs: object) -> SimpleNamespace:
+        inputs = kwargs["input"]
+        item_count = len(inputs) if isinstance(inputs, list) else 1
+        return SimpleNamespace(
+            data=[
+                SimpleNamespace(embedding=[float(i)] * 128)
+                for i in range(item_count)
+            ]
+        )
+
+    def fake_async_openai(*, api_key: str | None, base_url: str | None = None):
+        return SimpleNamespace(
+            embeddings=SimpleNamespace(create=fake_create),
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    monkeypatch.setattr(embedding_client_module, "AsyncOpenAI", fake_async_openai)
+
+    client = _EmbeddingClient(provider="openai", api_key="test")
+    method = getattr(client, method_name)
+
+    with pytest.raises(ValueError, match="expected 256"):
+        await method(*method_args)

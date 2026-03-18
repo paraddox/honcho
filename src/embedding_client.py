@@ -2,7 +2,7 @@ import asyncio
 import logging
 import threading
 from collections import defaultdict
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 import tiktoken
 from google import genai
@@ -21,6 +21,10 @@ class BatchItem(NamedTuple):
     chunk_index: int
 
 
+class _OpenAIEmbeddingOptions(TypedDict, total=False):
+    dimensions: int
+
+
 class _EmbeddingClient:
     """
     Embedding client supporting OpenAI and Gemini with chunking and batching support.
@@ -28,8 +32,8 @@ class _EmbeddingClient:
 
     def __init__(self, api_key: str | None = None, provider: str | None = None):
         self.provider: str = provider or settings.LLM.EMBEDDING_PROVIDER
-        self.output_dimensionality = settings.VECTOR_STORE.DIMENSIONS
-        self._supports_dimensions_param = False
+        self.output_dimensionality: int = settings.VECTOR_STORE.DIMENSIONS
+        self._supports_dimensions_param: bool = False
 
         if self.provider == "gemini":
             if api_key is None:
@@ -93,6 +97,18 @@ class _EmbeddingClient:
             settings.MAX_EMBEDDING_TOKENS_PER_REQUEST
         )
 
+    def _validate_embedding_dimensions(
+        self, embedding: list[float], *, label: str
+    ) -> list[float]:
+        actual_dimensions = len(embedding)
+        if actual_dimensions != self.output_dimensionality:
+            raise ValueError(
+                f"Embedding provider '{self.provider}' returned {actual_dimensions} "
+                + f"dimensions for {label}; expected {self.output_dimensionality}. "
+                + "Check VECTOR_STORE_DIMENSIONS and the active embedding model."
+            )
+        return embedding
+
     async def embed(self, query: str) -> list[float]:
         token_count = len(self.encoding.encode(query))
 
@@ -109,14 +125,20 @@ class _EmbeddingClient:
             )
             if not response.embeddings or not response.embeddings[0].values:
                 raise ValueError("No embedding returned from Gemini API")
-            return response.embeddings[0].values
+            return self._validate_embedding_dimensions(
+                response.embeddings[0].values,
+                label="query",
+            )
         else:  # openai
             response = await self.client.embeddings.create(
                 model=self.model,
                 input=query,
                 **self._openai_embedding_options(),
             )
-            return response.data[0].embedding
+            return self._validate_embedding_dimensions(
+                response.data[0].embedding,
+                label="query",
+            )
 
     async def simple_batch_embed(self, texts: list[str]) -> list[list[float]]:
         """
@@ -144,16 +166,27 @@ class _EmbeddingClient:
                         config={"output_dimensionality": self.output_dimensionality},
                     )
                     if response.embeddings:
-                        for emb in response.embeddings:
+                        for batch_index, emb in enumerate(response.embeddings):
                             if emb.values:
-                                embeddings.append(emb.values)
+                                embeddings.append(
+                                    self._validate_embedding_dimensions(
+                                        emb.values,
+                                        label=f"batch item {i + batch_index}",
+                                    )
+                                )
                 else:  # openai
                     response = await self.client.embeddings.create(
                         input=batch,
                         model=self.model,
                         **self._openai_embedding_options(),
                     )
-                    embeddings.extend([data.embedding for data in response.data])
+                    for batch_index, data in enumerate(response.data):
+                        embeddings.append(
+                            self._validate_embedding_dimensions(
+                                data.embedding,
+                                label=f"batch item {i + batch_index}",
+                            )
+                        )
             except Exception as e:
                 # Check if it's a token limit error and re-raise as ValueError for consistency
                 if "token" in str(e).lower():
@@ -286,7 +319,10 @@ class _EmbeddingClient:
                         ):
                             if embedding.values:
                                 result[item.text_id][item.chunk_index] = (
-                                    embedding.values
+                                    self._validate_embedding_dimensions(
+                                        embedding.values,
+                                        label=f"{item.text_id} chunk {item.chunk_index}",
+                                    )
                                 )
                 else:  # openai / openrouter
                     response = await self.client.embeddings.create(
@@ -296,7 +332,10 @@ class _EmbeddingClient:
                     )
                     for item, embedding_data in zip(batch, response.data, strict=True):
                         result[item.text_id][item.chunk_index] = (
-                            embedding_data.embedding
+                            self._validate_embedding_dimensions(
+                                embedding_data.embedding,
+                                label=f"{item.text_id} chunk {item.chunk_index}",
+                            )
                         )
 
                 return dict(result)
@@ -341,7 +380,7 @@ class _EmbeddingClient:
             for text_id, chunk_dict in all_embeddings.items()
         }
 
-    def _openai_embedding_options(self) -> dict[str, int]:
+    def _openai_embedding_options(self) -> _OpenAIEmbeddingOptions:
         if self._supports_dimensions_param:
             return {"dimensions": self.output_dimensionality}
         return {}

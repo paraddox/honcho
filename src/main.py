@@ -124,16 +124,17 @@ if SENTRY_ENABLED:
 async def lifespan(_: FastAPI):
     # Initialize CloudEvents telemetry
     await initialize_telemetry_async()
-    await validate_configured_vector_dimensions()
-
     try:
-        await init_cache()
-    except Exception as e:
-        logger.warning(
-            "Error initializing cache in api process; proceeding without cache: %s", e
-        )
+        await validate_configured_vector_dimensions()
 
-    try:
+        try:
+            await init_cache()
+        except Exception as e:
+            logger.warning(
+                "Error initializing cache in api process; proceeding without cache: %s",
+                e,
+            )
+
         yield
     finally:
         # Import here to avoid circular import at module load time
