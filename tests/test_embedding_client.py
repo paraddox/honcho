@@ -114,3 +114,48 @@ async def test_gemini_uses_configured_vector_dimensions(
         {"output_dimensionality": 256},
         {"output_dimensionality": 256},
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("provider", ["openai", "openrouter"])
+async def test_openai_compatible_providers_use_configured_vector_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    monkeypatch.setattr(
+        embedding_client_module.settings.VECTOR_STORE, "DIMENSIONS", 256
+    )
+
+    calls: list[dict[str, object]] = []
+
+    async def fake_create(**kwargs: object) -> SimpleNamespace:
+        calls.append(kwargs)
+        dimensions = kwargs.get("dimensions", 1536)
+        inputs = kwargs["input"]
+        item_count = len(inputs) if isinstance(inputs, list) else 1
+        return SimpleNamespace(
+            data=[
+                SimpleNamespace(embedding=[float(i)] * int(dimensions))
+                for i in range(item_count)
+            ]
+        )
+
+    def fake_async_openai(*, api_key: str | None, base_url: str | None = None):
+        return SimpleNamespace(
+            embeddings=SimpleNamespace(create=fake_create),
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    monkeypatch.setattr(embedding_client_module, "AsyncOpenAI", fake_async_openai)
+
+    client = _EmbeddingClient(provider=provider, api_key="test")
+
+    single = await client.embed("hello")
+    batch = await client.simple_batch_embed(["alpha", "beta"])
+    chunked = await client.batch_embed({"msg-1": ("gamma", [1, 2, 3])})
+
+    assert len(single) == 256
+    assert [len(item) for item in batch] == [256, 256]
+    assert [len(item) for item in chunked["msg-1"]] == [256]
+    assert [call["dimensions"] for call in calls] == [256, 256, 256]

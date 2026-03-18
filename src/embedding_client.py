@@ -29,6 +29,7 @@ class _EmbeddingClient:
     def __init__(self, api_key: str | None = None, provider: str | None = None):
         self.provider: str = provider or settings.LLM.EMBEDDING_PROVIDER
         self.output_dimensionality = settings.VECTOR_STORE.DIMENSIONS
+        self._supports_dimensions_param = False
 
         if self.provider == "gemini":
             if api_key is None:
@@ -56,6 +57,7 @@ class _EmbeddingClient:
             self.model = "openai/text-embedding-3-small"
             self.max_embedding_tokens = settings.MAX_EMBEDDING_TOKENS
             self.max_batch_size = 2048  # Same as OpenAI
+            self._supports_dimensions_param = True
         elif self.provider == "custom":
             if api_key is None:
                 api_key = (
@@ -72,9 +74,7 @@ class _EmbeddingClient:
                     "Custom embedding provider requires LLM_CUSTOM_EMBEDDING_BASE_URL"
                 )
             self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-            self.model = (
-                settings.LLM.CUSTOM_EMBEDDING_MODEL or "nomic-embed-text"
-            )
+            self.model = settings.LLM.CUSTOM_EMBEDDING_MODEL or "nomic-embed-text"
             self.max_embedding_tokens = settings.MAX_EMBEDDING_TOKENS
             self.max_batch_size = 2048
         else:  # openai
@@ -86,6 +86,7 @@ class _EmbeddingClient:
             self.model = "text-embedding-3-small"
             self.max_embedding_tokens = settings.MAX_EMBEDDING_TOKENS
             self.max_batch_size = 2048  # OpenAI batch limit
+            self._supports_dimensions_param = True
 
         self.encoding: tiktoken.Encoding = tiktoken.get_encoding("o200k_base")
         self.max_embedding_tokens_per_request: int = (
@@ -111,7 +112,9 @@ class _EmbeddingClient:
             return response.embeddings[0].values
         else:  # openai
             response = await self.client.embeddings.create(
-                model=self.model, input=query
+                model=self.model,
+                input=query,
+                **self._openai_embedding_options(),
             )
             return response.data[0].embedding
 
@@ -148,6 +151,7 @@ class _EmbeddingClient:
                     response = await self.client.embeddings.create(
                         input=batch,
                         model=self.model,
+                        **self._openai_embedding_options(),
                     )
                     embeddings.extend([data.embedding for data in response.data])
             except Exception as e:
@@ -286,7 +290,9 @@ class _EmbeddingClient:
                                 )
                 else:  # openai / openrouter
                     response = await self.client.embeddings.create(
-                        model=self.model, input=[item.text for item in batch]
+                        model=self.model,
+                        input=[item.text for item in batch],
+                        **self._openai_embedding_options(),
                     )
                     for item, embedding_data in zip(batch, response.data, strict=True):
                         result[item.text_id][item.chunk_index] = (
@@ -334,6 +340,11 @@ class _EmbeddingClient:
             text_id: [chunk_dict[i] for i in sorted(chunk_dict.keys())]
             for text_id, chunk_dict in all_embeddings.items()
         }
+
+    def _openai_embedding_options(self) -> dict[str, int]:
+        if self._supports_dimensions_param:
+            return {"dimensions": self.output_dimensionality}
+        return {}
 
 
 def _chunk_text_with_tokens(
