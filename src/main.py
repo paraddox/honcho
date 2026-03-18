@@ -17,7 +17,7 @@ from sentry_sdk.integrations.starlette import StarletteIntegration
 
 from src.cache.client import close_cache, init_cache
 from src.config import settings
-from src.db import engine, request_context
+from src.db import engine, request_context, validate_configured_vector_dimensions
 from src.exceptions import HonchoException
 from src.routers import (
     conclusions,
@@ -124,6 +124,7 @@ if SENTRY_ENABLED:
 async def lifespan(_: FastAPI):
     # Initialize CloudEvents telemetry
     await initialize_telemetry_async()
+    await validate_configured_vector_dimensions()
 
     try:
         await init_cache()

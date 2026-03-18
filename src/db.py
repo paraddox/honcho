@@ -1,6 +1,7 @@
 import contextvars
 
 from sqlalchemy import MetaData, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool
@@ -61,6 +62,77 @@ meta = MetaData(naming_convention=convention)
 meta.schema = table_schema
 Base = declarative_base(metadata=meta)
 
+_PGVECTOR_COLUMNS = (
+    ("documents", "embedding"),
+    ("message_embeddings", "embedding"),
+)
+
+
+def _postgres_vectors_are_active() -> bool:
+    return settings.VECTOR_STORE.TYPE == "pgvector" or not settings.VECTOR_STORE.MIGRATED
+
+
+def validate_pgvector_schema_dimensions(connection: Connection) -> None:
+    """Ensure active pgvector columns match the configured embedding size."""
+    if not _postgres_vectors_are_active():
+        return
+
+    expected_type = f"vector({settings.VECTOR_STORE.DIMENSIONS})"
+    mismatches: list[str] = []
+    missing_columns: list[str] = []
+
+    for table_name, column_name in _PGVECTOR_COLUMNS:
+        current_type = connection.execute(
+            text(
+                """
+                SELECT format_type(a.atttypid, a.atttypmod)
+                FROM pg_attribute a
+                JOIN pg_class c ON c.oid = a.attrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = :schema
+                  AND c.relname = :table_name
+                  AND a.attname = :column_name
+                  AND a.attnum > 0
+                  AND NOT a.attisdropped
+                """
+            ),
+            {
+                "schema": table_schema,
+                "table_name": table_name,
+                "column_name": column_name,
+            },
+        ).scalar_one_or_none()
+
+        if current_type is None:
+            missing_columns.append(f"{table_name}.{column_name}")
+        elif current_type != expected_type:
+            mismatches.append(f"{table_name}.{column_name}={current_type}")
+
+    if not missing_columns and not mismatches:
+        return
+
+    details: list[str] = []
+    if missing_columns:
+        details.append("missing columns: " + ", ".join(missing_columns))
+    if mismatches:
+        details.append("found " + ", ".join(mismatches))
+
+    raise RuntimeError(
+        "Configured VECTOR_STORE_DIMENSIONS="
+        + f"{settings.VECTOR_STORE.DIMENSIONS} requires pgvector columns of type "
+        + f"{expected_type}, but {'; '.join(details)}. "
+        + "Run the matching migration/config pair before starting Honcho."
+    )
+
+
+async def validate_configured_vector_dimensions() -> None:
+    """Validate active pgvector columns against the current runtime config."""
+    if not _postgres_vectors_are_active():
+        return
+
+    async with engine.connect() as connection:
+        await connection.run_sync(validate_pgvector_schema_dimensions)
+
 
 async def init_db():
     """Initialize the database using Alembic migrations"""
@@ -77,3 +149,4 @@ async def init_db():
     # Run Alembic migrations
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
+    await validate_configured_vector_dimensions()
