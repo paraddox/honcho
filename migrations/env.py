@@ -1,5 +1,6 @@
 import logging  # noqa: I001
 import sys
+from contextlib import nullcontext
 from logging.config import fileConfig
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
@@ -132,25 +133,32 @@ def run_migrations_online() -> None:
 
     """
 
-    configuration = config.get_section(config.config_ini_section)
-    if configuration is None:
-        configuration = {}
+    shared_connection = config.attributes.get("connection")
 
-    url = get_url()
-    validated_url = ensure_session_pooler(url)
-    configuration["sqlalchemy.url"] = validated_url
+    if shared_connection is None:
+        configuration = config.get_section(config.config_ini_section)
+        if configuration is None:
+            configuration = {}
 
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        echo=False,
-        connect_args={
-            "prepare_threshold": None,
-            "options": "-c statement_timeout=300000",  # 5 minutes in milliseconds
-        },
-    )
+        url = get_url()
+        validated_url = ensure_session_pooler(url)
+        configuration["sqlalchemy.url"] = validated_url
 
-    with connectable.connect() as connection:
+        connectable = engine_from_config(
+            configuration,
+            prefix="sqlalchemy.",
+            echo=False,
+            connect_args={
+                "prepare_threshold": None,
+                "options": "-c statement_timeout=300000",  # 5 minutes in milliseconds
+            },
+        )
+        connection_context = connectable.connect()
+    else:
+        connectable = None
+        connection_context = nullcontext(shared_connection)
+
+    with connection_context as connection:
         # Create schema and commit it outside the main migration transaction
         connection.execute(
             text(f"CREATE SCHEMA IF NOT EXISTS {target_metadata.schema};")
@@ -164,7 +172,8 @@ def run_migrations_online() -> None:
         connection.execute(
             text(f"SET search_path TO {target_metadata.schema}, public, extensions")
         )
-        connection.commit()
+        if connectable is not None:
+            connection.commit()
 
         context.configure(
             connection=connection,
@@ -181,6 +190,9 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+
+    if connectable is not None:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

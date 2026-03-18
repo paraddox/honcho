@@ -208,12 +208,15 @@ class LLMSettings(HonchoSettings):
     GEMINI_API_KEY: str | None = None
     GROQ_API_KEY: str | None = None
     OPENAI_COMPATIBLE_BASE_URL: str | None = None
+    CUSTOM_EMBEDDING_API_KEY: str | None = None
+    CUSTOM_EMBEDDING_BASE_URL: str | None = None
+    CUSTOM_EMBEDDING_MODEL: str | None = None
 
     # Separate vLLM endpoint (for local models)
     VLLM_API_KEY: str | None = None
     VLLM_BASE_URL: str | None = None
 
-    EMBEDDING_PROVIDER: Literal["openai", "gemini", "openrouter"] = "openai"
+    EMBEDDING_PROVIDER: Literal["openai", "gemini", "openrouter", "custom"] = "openai"
 
     # General LLM settings
     DEFAULT_MAX_TOKENS: Annotated[int, Field(default=1000, gt=0, le=100_000)] = 2500

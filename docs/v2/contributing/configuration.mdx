@@ -263,7 +263,12 @@ LLM_OPENAI_COMPATIBLE_BASE_URL=https://your-openai-compatible-endpoint.com
 LLM_DEFAULT_MAX_TOKENS=2500
 
 # Embedding provider (used when EMBED_MESSAGES=true)
-LLM_EMBEDDING_PROVIDER=openai  # Options: openai, gemini
+LLM_EMBEDDING_PROVIDER=openai  # Options: openai, gemini, openrouter, custom
+
+# Custom OpenAI-compatible embedding endpoint (for Ollama, vLLM, etc.)
+LLM_CUSTOM_EMBEDDING_API_KEY=ollama
+LLM_CUSTOM_EMBEDDING_BASE_URL=http://localhost:11434/v1
+LLM_CUSTOM_EMBEDDING_MODEL=nomic-embed-text
 ```
 
 ### Feature-Specific Model Configuration

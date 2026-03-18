@@ -283,7 +283,12 @@ LLM_VLLM_BASE_URL=http://localhost:8000
 LLM_DEFAULT_MAX_TOKENS=2500
 
 # Embedding provider (used when EMBED_MESSAGES=true)
-LLM_EMBEDDING_PROVIDER=openai  # Options: openai, gemini, openrouter
+LLM_EMBEDDING_PROVIDER=openai  # Options: openai, gemini, openrouter, custom
+
+# Custom OpenAI-compatible embedding endpoint (for Ollama, vLLM, etc.)
+LLM_CUSTOM_EMBEDDING_API_KEY=ollama
+LLM_CUSTOM_EMBEDDING_BASE_URL=http://localhost:11434/v1
+LLM_CUSTOM_EMBEDDING_MODEL=nomic-embed-text
 
 # Tool output limits (to prevent token explosion)
 LLM_MAX_TOOL_OUTPUT_CHARS=10000  # ~2500 tokens at 4 chars/token
@@ -524,7 +529,7 @@ VECTOR_STORE_MIGRATED=false
 # Global namespace prefix for all vector namespaces
 VECTOR_STORE_NAMESPACE=honcho
 
-# Embedding dimensions (default for OpenAI text-embedding-3-small)
+# Embedding dimensions. Must match the active embedding model.
 VECTOR_STORE_DIMENSIONS=1536
 
 # Reconciliation interval for syncing
@@ -883,5 +888,6 @@ uv run alembic revision --autogenerate -m "Description of changes"
 6. **Vector Store Issues**
    - For Turbopuffer, ensure `VECTOR_STORE_TURBOPUFFER_API_KEY` is set
    - Check `VECTOR_STORE_DIMENSIONS` matches your embedding model
+   - If you change dimensions in `pgvector`, clear or re-embed stored vectors first
 
 This configuration guide covers all the settings available in Honcho. Always use environment-specific configuration files and never commit sensitive values like API keys or JWT secrets to version control.
